@@ -9,8 +9,8 @@ use graphql::schema;
 use argument::parse_arguments;
 use state::{State, db::init_pool};
 
-const DEFAULT_PORT: &'static str = "8000";
-const PG_CONFIG: &'static str = "host=localhost user=postgres dbname=postgres";
+const DEFAULT_PORT: &'static str = "80";
+const PG_CONFIG: &'static str = "host=postgres-server user=postgres dbname=postgres";
 
 fn main() {
     ::std::env::set_var("RUST_LOG", "info");
@@ -39,5 +39,5 @@ fn main() {
         graphql_filter
         .or(graphiql_filter)
     )
-    .run(([127, 0, 0, 1], port));
+    .run(([0, 0, 0, 0], port));
 }
