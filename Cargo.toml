@@ -1,5 +1,5 @@
 [package]
-name = "pikit-graphql-server"
+name = "pigskit-graphql-server"
 version = "0.1.0"
 authors = ["davidwu <david6906817@gmail.com>"]
 edition = "2018"

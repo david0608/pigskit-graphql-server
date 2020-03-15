@@ -2,10 +2,10 @@ use clap::{App, Arg, ArgMatches};
 use crate::DEFAULT_PORT;
 
 pub fn parse_arguments<'a>() -> ArgMatches<'a> {
-    App::new("pikit-server")
+    App::new("pigskit-server")
         .version("1.0")
         .author("David Wu <david6906817@gmail.com>")
-        .about("Pikit server.")
+        .about("Pigskit server.")
         .arg(
             Arg::with_name("port")
                 .short("p")
