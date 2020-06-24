@@ -15,5 +15,10 @@ pub fn parse_arguments<'a>() -> ArgMatches<'a> {
                 .takes_value(true)
                 .default_value(DEFAULT_PORT),
         )
+        .arg(
+            Arg::with_name("dev")
+                .help("run server in development mode.")
+                .short("d"),
+        )
         .get_matches()
 }

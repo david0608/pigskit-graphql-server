@@ -1,11 +1,10 @@
-use juniper::Context;
+use crate::error::Error;
 
 pub mod db;
-#[macro_use] mod sql;
 
 #[derive(Clone)]
 pub struct State {
-    db_pool: db::Pool
+    db_pool: db::Pool,
 }
 
 impl State {
@@ -15,9 +14,9 @@ impl State {
         }
     }
 
-    pub fn db_pool(&self) -> &db::Pool {
-        &self.db_pool
+    pub fn db_connection(&self) -> Result<db::Connection, Error> {
+        self.db_pool.get().map_err(|err| -> Error {
+            err.into()
+        })
     }
 }
-
-impl Context for State {}

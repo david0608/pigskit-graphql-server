@@ -2,7 +2,8 @@ use std::convert::From;
 use juniper::FieldResult;
 use postgres::row::Row;
 use uuid::Uuid;
-use crate::state::State;
+// use crate::state::State;
+use crate::graphql::Context;
 // use crate::error::Error;
 
 pub struct Account {
@@ -50,10 +51,10 @@ impl From<&Row> for Account {
 
 pub struct QueryAccount;
 
-#[juniper::graphql_object(Context = State)]
+#[juniper::graphql_object(Context = Context)]
 impl QueryAccount {
-    fn all(context: &State) -> FieldResult<Vec<Account>> {
-        let mut conn = context.db_pool().get()?;
+    fn all(context: &Context) -> FieldResult<Vec<Account>> {
+        let mut conn = context.state().db_connection()?;
         let rows = conn.query("SELECT * FROM account", &[])?;
         Ok(rows.iter().map(|row| row.into()).collect())
     }
@@ -61,10 +62,10 @@ impl QueryAccount {
 
 pub struct MutationAccount;
 
-#[juniper::graphql_object(Context = State)]
+#[juniper::graphql_object(Context = Context)]
 impl MutationAccount {
-    fn register(context: &State, username: String, password: String, nick_name: String) -> FieldResult<Account> {
-        let mut conn = context.db_pool().get()?;
+    fn register(context: &Context, username: String, password: String, nick_name: String) -> FieldResult<Account> {
+        let mut conn = context.state().db_connection()?;
         if conn.execute(
             "INSERT INTO account (username, password, nick_name) values ($1, $2, $3)",
             &[&username, &password, &nick_name],
