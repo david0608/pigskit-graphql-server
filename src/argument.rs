@@ -1,5 +1,4 @@
 use clap::{App, Arg, ArgMatches};
-use crate::DEFAULT_PORT;
 
 pub fn parse_arguments<'a>() -> ArgMatches<'a> {
     App::new("pigskit-server")
@@ -13,7 +12,6 @@ pub fn parse_arguments<'a>() -> ArgMatches<'a> {
                 .value_name("PORT")
                 .help("Set the port that server will listen.")
                 .takes_value(true)
-                .default_value(DEFAULT_PORT),
         )
         .arg(
             Arg::with_name("dev")
@@ -21,4 +19,16 @@ pub fn parse_arguments<'a>() -> ArgMatches<'a> {
                 .short("d"),
         )
         .get_matches()
+}
+
+pub fn args_port(args: &ArgMatches) -> Option<u16> {
+    if let Some(port) = args.value_of("port") {
+        if let Ok(port) = port.parse::<u16>() {
+            Some(port)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
