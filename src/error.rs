@@ -16,7 +16,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new(r#type: String, message: String) -> Self {
+    fn new(r#type: String, message: String) -> Self {
         Error {
             r#type: r#type,
             message: message,
@@ -24,10 +24,25 @@ impl Error {
         }
     }
 
-    pub fn permission_denied() -> Self {
+    fn internal(inner: InnerError) -> Self {
+        Error {
+            r#type: "InternalServerError".to_string(),
+            message: "Internal server error.".to_string(),
+            inner: Some(inner),
+        }
+    }
+
+    pub fn session_expired(name: &str) -> Self {
+        Self::new(
+            "SessionExpired".to_string(),
+            format!(r#"Session for cookie "{}" has expired."#, name),
+        )
+    }
+
+    pub fn unauthorized() -> Self {
         Self::new(
             "Unauthorized".to_string(),
-            "Permission denied".to_string(),
+            "Unauthorized.".to_string(),
         )
     }
 
@@ -37,10 +52,20 @@ impl Error {
             format!(r#"Missing or invalid cookie "{}" in request."#, name),
         )
     }
+
+    pub fn is_inner(&self) -> bool {
+        self.inner.is_some()
+    }
 }
 
 impl IntoFieldError for Error {
     fn into_field_error(self) -> FieldError {
+        if self.is_inner() {
+            info!("Encountered a server internal error: {:?}", self);
+        } else {
+            info!("Encountered an error: {:?}", self);
+        }
+
         let error_type = self.r#type;
         FieldError::new(
             self.message,
@@ -71,11 +96,7 @@ macro_rules! impl_from_for_error {
 
         impl From<$from> for Error {
             fn from(err: $from) -> Self {
-                Error {
-                    r#type: "InternalServerError".to_string(),
-                    message: "Internal server error.".to_string(),
-                    inner: Some(err.into()),
-                }
+                Error::internal(err.into())
             }
         }
     }
@@ -100,18 +121,10 @@ impl From<postgres::error::Error> for Error {
 
         match code {
             "C2002" => {
-                Error {
-                    r#type: "SessionExpired".to_string(),
-                    message: "Session expired".to_string(),
-                    inner: Some(err.into()),
-                }
+                Error::session_expired("USSID")
             }
             _ => {
-                Error {
-                    r#type: "InternalServerError".to_string(),
-                    message: "Internal server error.".to_string(),
-                    inner: Some(err.into()),
-                }
+                Error::internal(err.into())
             }
         }
     }

@@ -21,7 +21,10 @@ impl QueryUser {
         let mut conn = context.state().db_connection()?;
         let (id, username, nickname,) = query_one!(
             conn,
-            "SELECT id, username, nickname FROM users WHERE id = get_session_user($1)",
+            "WITH ss_user AS (
+                SELECT user_id id FROM get_session_user($1)
+            )
+            SELECT id, username, nickname FROM users WHERE id = (SELECT id FROM ss_user);",
             &[&UuidNN(user_session_id)],
             (id: Uuid, username: String, nickname: Option<String>),
         )?;
@@ -87,25 +90,36 @@ impl User {
         self.nickname.as_ref()
     }
 
-    fn user_shops(&self, context: &Context) -> Result<Option<Vec<UserShop>>, Error> {
+    fn user_shops(&self, context: &Context, id: Option<Uuid>, name: Option<String>) -> Result<Option<Vec<UserShop>>, Error> {
         let mut conn = context.state().db_connection()?;
-        let user_session_id = context.user_session_id()?;
-        let (user_id,) = query_one!(
-            conn,
-            "SELECT user_id FROM get_session_user($1)",
-            &[&UuidNN(user_session_id)],
-            (user_id: Uuid),
-        )?;
-        if self.id != user_id {
-            return Err(Error::permission_denied())
+
+        let mut clause = Clause::new();
+        if let Some(id) = id.as_ref() {
+            clause.and(Clause::equal("id", format!("'{}'", id)));
+        }
+        if let Some(name) = name.as_ref() {
+            clause.and(Clause::like("upper(name)", format!("upper('%{}%')", name)));
         }
 
         let rows = query!(
             conn,
-            "SELECT shops.id, shops.name, shops.latest_update, shop_user.team_authority, shop_user.store_authority, shop_user.product_authority
-                FROM shop_user INNER JOIN shops
-                ON shop_user.shop_id = shops.id
-                AND shop_user.user_id = $1",
+            format!(
+                "SELECT
+                    shop.id,
+                    shop.name,
+                    shop.latest_update,
+                    shop_user.team_authority,
+                    shop_user.store_authority,
+                    shop_user.product_authority
+                FROM
+                    (SELECT * FROM shops{}) shop
+                INNER JOIN
+                    shop_user
+                ON
+                    shop.id = shop_user.shop_id
+                    AND shop_user.user_id = $1",
+                clause
+            ).as_str(),
             &[&self.id],
         )?;
         Ok(Some(

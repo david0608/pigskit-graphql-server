@@ -271,10 +271,10 @@ impl Shop {
             &[&self.id, &UuidNN(user_session_id)],
         )? {
             if let Permission::None = row.get("team_authority") {
-                return Err(Error::permission_denied())
+                return Err(Error::unauthorized())
             }
         } else {
-            return Err(Error::permission_denied())
+            return Err(Error::unauthorized())
         }
 
         let rows = query!(
