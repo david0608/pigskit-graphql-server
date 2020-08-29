@@ -8,10 +8,15 @@ use crate::{
         clause::Clause,
     },
     graphql::{
-        Context,
+        context::Context,
         user::User,
+        order::{
+            Order,
+            query_orders,
+        },
     },
     error::Error,
+    utils::dict::Dict,
 };
 
 pub struct QueryShop;
@@ -128,100 +133,226 @@ impl Shop {
 
 #[juniper::graphql_object(Context = Context)]
 impl Shop {
-    fn id(&self) -> &Uuid {
-        &self.id
+    fn id(&self) -> Uuid {
+        self.id
     }
 
     fn name(&self) -> &String {
         &self.name
     }
 
-    fn latest_update(&self) -> &DateTime<Utc> {
-        &self.latest_update
+    fn latest_update(&self) -> DateTime<Utc> {
+        self.latest_update
     }
 
-    fn products(&self, context: &Context) -> Result<Vec<Product>, Error> {
+    fn products(&self, context: &Context, key: Option<Uuid>, name: Option<String>) -> Result<Vec<Product>, Error> {
         let mut conn = context.state().db_connection()?;
+
+        let mut clause = Clause::new();
+        if let Some(key) = key.as_ref() {
+            clause.and(Clause::equal("key", format!("'{}'", key)));
+        }
+        if let Some(name) = name.as_ref() {
+            clause.and(Clause::like("upper((product).name)", format!("upper('%{}%')", name)));
+        }
+
         let rows = query!(
             conn,
-            "SELECT key, (product).name, (product).description, (product).price, (product).latest_update
-                FROM query_shop_products($1);",
+            format!(
+                "WITH
+                    products AS (
+                        SELECT
+                            key,
+                            product
+                        FROM
+                            query_shop_products($1){}
+                    ),
+                    customizes AS (
+                        SELECT
+                            key prod_key,
+                            (query_product_customizes(product)).*
+                        FROM
+                            products
+                    ),
+                    selections AS (
+                        SELECT
+                            key cus_key,
+                            (query_customize_selections(customize)).*
+                        FROM
+                            customizes
+                    )
+                SELECT
+                    products.key prod_key,
+                    (product).name prod_name,
+                    (product).description prod_description,
+                    (product).price prod_price,
+                    (product).series_id prod_series_id,
+                    (product).has_picture prod_has_picture,
+                    (product).latest_update prod_latest_update,
+                    cus_join_sel.cus_key,
+                    (cus_join_sel.customize).name cus_name,
+                    (cus_join_sel.customize).description cus_description,
+                    (cus_join_sel.customize).latest_update cus_latest_update,
+                    cus_join_sel.sel_key,
+                    (cus_join_sel.selection).name sel_name,
+                    (cus_join_sel.selection).price sel_price
+                FROM
+                    products
+                LEFT JOIN
+                    (
+                        SELECT
+                            prod_key,
+                            customizes.key cus_key,
+                            customize,
+                            selections.key sel_key,
+                            selection
+                        FROM
+                            customizes
+                        LEFT JOIN
+                            selections
+                        ON
+                            customizes.key = selections.cus_key
+                    ) cus_join_sel
+                ON
+                    products.key = cus_join_sel.prod_key",
+                clause,
+            ).as_str(),
             &[&UuidNN(self.id)],
         )?;
-        Ok(
-            rows.iter().map(|row| {
-                Product {
-                    shop_id: self.id,
-                    key: row.get("key"),
-                    name: row.get("name"),
-                    description: row.get("description"),
-                    price: row.get("price"),
-                    latest_update: row.get("latest_update"),
-                }
-            })
-            .collect()
-        )
-    }
 
-    fn products_json(&self, context: &Context) -> Result<String, Error> {
+        let mut products = Dict::new();
+        for row in rows.iter() {
+            let prod_key = row.get::<&str, Uuid>("prod_key");
+            let product = if let Some(product) = products.ref_mut_value(prod_key) {
+                product
+            } else {
+                let product = Product::new(
+                    prod_key,
+                    row.get("prod_name"),
+                    row.get("prod_description"),
+                    row.get("prod_price"),
+                    row.get("prod_has_picture"),
+                    row.get("prod_latest_update"),
+                );
+                products.insert_uncheck(prod_key, product)
+            };
+
+            if let Ok(cus_key) = row.try_get::<&str, Uuid>("cus_key") {
+                let customize = if let Some(customize) = product.ref_mut_customize(cus_key) {
+                    customize
+                } else {
+                    let customize = Customize::new(
+                        cus_key,
+                        row.get("cus_name"),
+                        row.get("cus_description"),
+                        row.get("cus_latest_update"),
+                    );
+                    product.insert_customize_uncheck(cus_key, customize)
+                };
+
+                if let Ok(sel_key) = row.try_get::<&str, Uuid>("sel_key") {
+                    if let None = customize.ref_mut_selection(sel_key) {
+                        let selection = Selection::new(
+                            sel_key,
+                            row.get("sel_name"),
+                            row.get("sel_price"),
+                        );
+                        customize.insert_selection_uncheck(sel_key, selection);
+                    }
+                }
+            }
+        }
+
+        Ok(products.values())
+    }
+    
+    fn products_json(&self, context: &Context, key: Option<Uuid>, name: Option<String>) -> Result<String, Error> {
         let mut conn = context.state().db_connection()?;
+
+        let mut clause = Clause::new();
+        if let Some(key) = key.as_ref() {
+            clause.and(Clause::equal("key", format!("'{}'", key)));
+        }
+        if let Some(name) = name.as_ref() {
+            clause.and(Clause::like("upper((product).name)", format!("upper('%{}%')", name)));
+        }
+
         let rows = query!(
             conn,
-            "WITH
-                query_products AS (
-                    SELECT
-                        (query_shop_products($1)).*
-                ),
-                query_customizes AS (
-                    SELECT
-                        key prod_key,
-                        product prod,
-                        (query_product_customizes(product)).*
-                    FROM
-                        query_products
-                ),
-                query_selections AS (
-                    SELECT
-                        prod_key,
-                        prod,
-                        key cus_key,
-                        customize cus,
-                        (query_customize_selections(customize)).*
-                    FROM
-                        query_customizes
-                )
-            SELECT
-                prod_key,
-                (prod).name prod_name,
-                (prod).description prod_desc,
-                (prod).price prod_price,
-                (prod).series_id prod_series_id,
-                (prod).latest_update prod_latest_update,
-                cus_key,
-                (cus).name cus_name,
-                (cus).description cus_desc,
-                (cus).latest_update cus_latest_update,
-                key sel_key,
-                (selection).name sel_name,
-                (selection).price sel_price
-            FROM
-                query_selections",
+            format!(
+                "WITH
+                    products AS (
+                        SELECT
+                            key,
+                            product
+                        FROM
+                            query_shop_products($1){}
+                    ),
+                    customizes AS (
+                        SELECT
+                            key prod_key,
+                            (query_product_customizes(product)).*
+                        FROM
+                            products
+                    ),
+                    selections AS (
+                        SELECT
+                            key cus_key,
+                            (query_customize_selections(customize)).*
+                        FROM
+                            customizes
+                    )
+                SELECT
+                    products.key prod_key,
+                    (product).name prod_name,
+                    (product).description prod_description,
+                    (product).price prod_price,
+                    (product).series_id prod_series_id,
+                    (product).latest_update prod_latest_update,
+                    cus_join_sel.cus_key,
+                    (cus_join_sel.customize).name cus_name,
+                    (cus_join_sel.customize).description cus_description,
+                    (cus_join_sel.customize).latest_update cus_latest_update,
+                    cus_join_sel.sel_key,
+                    (cus_join_sel.selection).name sel_name,
+                    (cus_join_sel.selection).price sel_price
+                FROM
+                    products
+                LEFT JOIN
+                    (
+                        SELECT
+                            prod_key,
+                            customizes.key cus_key,
+                            customize,
+                            selections.key sel_key,
+                            selection
+                        FROM
+                            customizes
+                        LEFT JOIN
+                            selections
+                        ON
+                            customizes.key = selections.cus_key
+                    ) cus_join_sel
+                ON
+                    products.key = cus_join_sel.prod_key",
+                clause,
+            ).as_str(),
             &[&UuidNN(self.id)],
         )?;
 
         let mut products = Map::new();
         for row in rows.iter() {
-            let prod_key: Uuid = row.get("prod_key");
+            let prod_key = row.get::<&str, Uuid>("prod_key");
             if !products.contains_key(&prod_key.to_string()) {
                 let name: String = row.get("prod_name");
-                let desc: Option<String> = row.get("prod_desc");
+                let description: Option<String> = row.get("prod_description");
                 let price: i32 = row.get("prod_price");
                 let series_id: Option<Uuid> = row.get("prod_series_id");
                 let latest_update: DateTime<Utc> = row.get("prod_latest_update");
                 let customizes = Map::new();
                 let product = json!({
                     "name": name,
-                    "description": desc,
+                    "description": description,
                     "price": price,
                     "series_id": series_id,
                     "latest_update": latest_update.to_string(),
@@ -230,32 +361,33 @@ impl Shop {
                 products.insert(prod_key.to_string(), product);
             }
 
-            let customizes = products.get_mut(&prod_key.to_string()).unwrap().get_mut("customizes").unwrap().as_object_mut().unwrap();
-            let cus_key: Uuid = row.get("cus_key");
-            if !customizes.contains_key(&cus_key.to_string()) {
-                let name: String = row.get("cus_name");
-                let desc: String = row.get("cus_desc");
-                let latest_update: DateTime<Utc> = row.get("cus_latest_update");
-                let selections = Map::new();
-                let customize = json!({
-                    "name": name,
-                    "description": desc,
-                    "latest_update": latest_update.to_string(),
-                    "selections": selections
-                });
-                customizes.insert(cus_key.to_string(), customize);
-            }
+            if let Ok(cus_key) = row.try_get::<&str, Uuid>("cus_key") {
+                let customizes = products.get_mut(&prod_key.to_string()).unwrap().get_mut("customizes").unwrap().as_object_mut().unwrap();
+                if !customizes.contains_key(&cus_key.to_string()) {
+                    let name: String = row.get("cus_name");
+                    let description: String = row.get("cus_description");
+                    let latest_update: DateTime<Utc> = row.get("cus_latest_update");
+                    let selections = Map::new();
+                    let customize = json!({
+                        "name": name,
+                        "description": description,
+                        "latest_update": latest_update.to_string(),
+                        "selections": selections
+                    });
+                    customizes.insert(cus_key.to_string(), customize);
+                }
 
-            let selections = customizes.get_mut(&cus_key.to_string()).unwrap().get_mut("selections").unwrap().as_object_mut().unwrap();
-            let sel_key: Uuid = row.get("sel_key");
-            let sel_key = sel_key.to_string();
-            let name: String = row.get("sel_name");
-            let price: i32 = row.get("sel_price");
-            let selection = json!({
-                "name": name,
-                "price": price
-            });
-            selections.insert(sel_key, selection);
+                if let Ok(sel_key) = row.try_get::<&str, Uuid>("sel_key") {
+                    let selections = customizes.get_mut(&cus_key.to_string()).unwrap().get_mut("selections").unwrap().as_object_mut().unwrap();
+                    let name: String = row.get("sel_name");
+                    let price: i32 = row.get("sel_price");
+                    let selection = json!({
+                        "name": name,
+                        "price": price
+                    });
+                    selections.insert(sel_key.to_string(), selection);
+                }
+            }
         }
 
         Ok(serde_json::to_string(&products)?)
@@ -301,114 +433,142 @@ impl Shop {
             .collect()
         ))
     }
+
+    fn orders(&self, context: &Context) -> Result<Vec<Order>, Error> {
+        let mut conn = context.state().db_connection()?;
+        let user_session_id = context.user_session_id()?;
+
+        let (user_id,) = query_one!(
+            conn,
+            "SELECT get_session_user($1) AS user_id;",
+            &[&UuidNN(user_session_id)],
+            (user_id: Uuid),
+        )?;
+
+        let (invalid,) = query_one!(
+            conn,
+            "SELECT check_shop_user_authority($1, $2, 'store_authority', 'none') AS invalid;",
+            &[&UuidNN(self.id), &UuidNN(user_id)],
+            (invalid: bool),
+        )?;
+
+        if invalid { return Err(Error::unauthorized()) }
+
+        query_orders(conn, Some(self.id), None)
+    }
 }
 
 struct Product {
-    shop_id: Uuid,
     key: Uuid,
     name: String,
-    description: String,
+    description: Option<String>,
     price: i32,
+    has_picture: bool,
     latest_update: DateTime<Utc>,
+    customizes: Dict<Uuid, Customize>,
+}
+
+impl Product {
+    fn new(key: Uuid, name: String, description: Option<String>, price: i32, has_picture: bool, latest_update: DateTime<Utc>) -> Self {
+        Product {
+            key: key,
+            name: name,
+            description: description,
+            price: price,
+            has_picture: has_picture,
+            latest_update: latest_update,
+            customizes: Dict::new(),
+        }
+    }
+    
+    fn ref_mut_customize(&mut self, key: Uuid) -> Option<&mut Customize> {
+        self.customizes.ref_mut_value(key)
+    }
+
+    fn insert_customize_uncheck(&mut self, key: Uuid, cus: Customize) -> &mut Customize {
+        self.customizes.insert_uncheck(key, cus)
+    }
 }
 
 #[juniper::graphql_object(Context = Context)]
 impl Product {
-    fn key(&self) -> &Uuid {
-        &self.key
+    fn key(&self) -> Uuid {
+        self.key
     }
 
     fn name(&self) -> &String {
         &self.name
     }
 
-    fn description(&self) -> &String {
+    fn description(&self) -> &Option<String> {
         &self.description
     }
 
-    fn price(&self) -> &i32 {
-        &self.price
+    fn price(&self) -> i32 {
+        self.price
     }
 
-    fn latest_update(&self) -> &DateTime<Utc> {
-        &self.latest_update
+    fn has_picture(&self) -> bool {
+        self.has_picture
     }
 
-    fn customizes(&self, context: &Context) -> Result<Vec<Customize>, Error> {
-        let mut conn = context.state().db_connection()?;
-        let rows = query!(
-            conn,
-            "WITH query AS (
-                SELECT query_product_customizes(product) AS cus FROM query_shop_products($1) WHERE key = $2
-            )
-            SELECT (cus).key, ((cus).customize).name, ((cus).customize).description, ((cus).customize).latest_update FROM query;",
-            &[&UuidNN(self.shop_id), &self.key],
-        )?;
-        Ok(
-            rows.iter().map(|row| {
-                Customize {
-                    shop_id: self.shop_id,
-                    product_key: self.key,
-                    key: row.get("key"),
-                    name: row.get("name"),
-                    description: row.get("description"),
-                    latest_update: row.get("latest_update"),
-                }
-            })
-            .collect()
-        )
+    fn latest_update(&self) -> DateTime<Utc> {
+        self.latest_update
+    }
+
+    fn customizes(&self) -> &Vec<Customize> {
+        self.customizes.ref_values()
     }
 }
 
 struct Customize {
-    shop_id: Uuid,
-    product_key: Uuid,
     key: Uuid,
     name: String,
-    description: String,
+    description: Option<String>,
     latest_update: DateTime<Utc>,
+    selections: Dict<Uuid, Selection>,
+}
+
+impl Customize {
+    fn new(key: Uuid, name: String, description: Option<String>, latest_update: DateTime<Utc>) -> Self {
+        Customize {
+            key: key,
+            name: name,
+            description: description,
+            latest_update: latest_update,
+            selections: Dict::new(),
+        }
+    }
+
+    fn ref_mut_selection(&mut self, key: Uuid) -> Option<&mut Selection> {
+        self.selections.ref_mut_value(key)
+    }
+
+    fn insert_selection_uncheck(&mut self, key: Uuid, sel: Selection) -> &mut Selection {
+        self.selections.insert_uncheck(key, sel)
+    }
 }
 
 #[juniper::graphql_object(Context = Context)]
 impl Customize {
-    fn key(&self) -> &Uuid {
-        &self.key
+    fn key(&self) -> Uuid {
+        self.key
     }
 
     fn name(&self) -> &String {
         &self.name
     }
 
-    fn description(&self) -> &String {
+    fn description(&self) -> &Option<String> {
         &self.description
     }
 
-    fn latest_update(&self) -> &DateTime<Utc> {
-        &self.latest_update
+    fn latest_update(&self) -> DateTime<Utc> {
+        self.latest_update
     }
 
-    fn selections(&self, context: &Context) -> Result<Vec<Selection>, Error> {
-        let mut conn = context.state().db_connection()?;
-        let rows = query!(
-            conn,
-            "WITH customizes AS (
-                SELECT query_product_customizes(product) AS cus FROM query_shop_products($1) WHERE key = $2
-            ), selections AS (
-                SELECT query_customize_selections((cus).customize) AS sel FROM customizes WHERE (cus).key = $3
-            )
-            SELECT (sel).key, ((sel).selection).name, ((sel).selection).price FROM selections;",
-            &[&UuidNN(self.shop_id), &self.product_key, &self.key],
-        )?;
-        Ok(
-            rows.iter().map(|row| {
-                Selection {
-                    key: row.get("key"),
-                    name: row.get("name"),
-                    price: row.get("price"),
-                }
-            })
-            .collect()
-        )
+    fn selections(&self) -> &Vec<Selection> {
+        self.selections.ref_values()
     }
 }
 
@@ -416,6 +576,16 @@ struct Selection {
     key: Uuid,
     name: String,
     price: i32,
+}
+
+impl Selection {
+    fn new(key: Uuid, name: String, price: i32) -> Self {
+        Selection {
+            key: key,
+            name: name,
+            price: price,
+        }
+    }
 }
 
 #[juniper::graphql_object]

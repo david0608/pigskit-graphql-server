@@ -6,7 +6,7 @@ use crate::{
         clause::Clause,
     },
     graphql::{
-        Context,
+        context::Context,
         shop::Shop,
     },
     error::Error,

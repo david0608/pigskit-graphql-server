@@ -123,6 +123,9 @@ impl From<postgres::error::Error> for Error {
             "C2002" => {
                 Error::session_expired("USSID")
             }
+            "C3001" => {
+                Error::session_expired("GSSID")
+            }
             _ => {
                 Error::internal(err.into())
             }

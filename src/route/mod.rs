@@ -21,7 +21,8 @@ use crate::{
 
 fn context_filter(state: State) -> BoxedFilter<(Context,)> {
     cookie::optional("USSID")
-    .map(move |user_session_cookie: Option<String>| {
+    .and(cookie::optional("GSSID"))
+    .map(move |user_session_cookie: Option<String>, guest_session_cookie: Option<String>| {
         let user_session_id = if let Some(cookie) = user_session_cookie {
             if let Ok(id) = Uuid::parse_str(cookie.as_str()) {
                 Some(id)
@@ -31,9 +32,21 @@ fn context_filter(state: State) -> BoxedFilter<(Context,)> {
         } else {
             None
         };
+
+        let guest_session_id = if let Some(cookie) = guest_session_cookie {
+            if let Ok(id) = Uuid::parse_str(cookie.as_str()) {
+                Some(id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Context::new(
             state.clone(),
             user_session_id,
+            guest_session_id,
         )
     })
     .boxed()

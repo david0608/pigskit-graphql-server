@@ -7,6 +7,7 @@ mod graphql;
 mod state;
 mod argument;
 mod error;
+mod utils;
 
 use state::{State, db::init_pool};
 
