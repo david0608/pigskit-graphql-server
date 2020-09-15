@@ -308,6 +308,7 @@ impl Shop {
                     (product).description prod_description,
                     (product).price prod_price,
                     (product).series_id prod_series_id,
+                    (product).has_picture prod_has_picture,
                     (product).latest_update prod_latest_update,
                     cus_join_sel.cus_key,
                     (cus_join_sel.customize).name cus_name,
@@ -344,48 +345,43 @@ impl Shop {
         for row in rows.iter() {
             let prod_key = row.get::<&str, Uuid>("prod_key");
             if !products.contains_key(&prod_key.to_string()) {
-                let name: String = row.get("prod_name");
-                let description: Option<String> = row.get("prod_description");
-                let price: i32 = row.get("prod_price");
-                let series_id: Option<Uuid> = row.get("prod_series_id");
-                let latest_update: DateTime<Utc> = row.get("prod_latest_update");
-                let customizes = Map::new();
-                let product = json!({
-                    "name": name,
-                    "description": description,
-                    "price": price,
-                    "series_id": series_id,
-                    "latest_update": latest_update.to_string(),
-                    "customizes": customizes
-                });
-                products.insert(prod_key.to_string(), product);
+                products.insert(
+                    prod_key.to_string(),
+                    json!({
+                        "name": row.get::<&str, String>("prod_name"),
+                        "description": row.get::<&str, Option<String>>("prod_description"),
+                        "price": row.get::<&str, i32>("prod_price"),
+                        "series_id": row.get::<&str, Option<Uuid>>("prod_series_id"),
+                        "has_picture": row.get::<&str, bool>("prod_has_picture"),
+                        "latest_update": row.get::<&str, DateTime<Utc>>("prod_latest_update").to_string(),
+                        "customizes": Map::new()
+                    })
+                );
             }
 
             if let Ok(cus_key) = row.try_get::<&str, Uuid>("cus_key") {
                 let customizes = products.get_mut(&prod_key.to_string()).unwrap().get_mut("customizes").unwrap().as_object_mut().unwrap();
                 if !customizes.contains_key(&cus_key.to_string()) {
-                    let name: String = row.get("cus_name");
-                    let description: String = row.get("cus_description");
-                    let latest_update: DateTime<Utc> = row.get("cus_latest_update");
-                    let selections = Map::new();
-                    let customize = json!({
-                        "name": name,
-                        "description": description,
-                        "latest_update": latest_update.to_string(),
-                        "selections": selections
-                    });
-                    customizes.insert(cus_key.to_string(), customize);
+                    customizes.insert(
+                        cus_key.to_string(),
+                        json!({
+                            "name": row.get::<&str, String>("cus_name"),
+                            "description": row.get::<&str, Option<String>>("cus_description"),
+                            "latest_update": row.get::<&str, DateTime<Utc>>("cus_latest_update").to_string(),
+                            "selections": Map::new()
+                        })
+                    );
                 }
 
                 if let Ok(sel_key) = row.try_get::<&str, Uuid>("sel_key") {
                     let selections = customizes.get_mut(&cus_key.to_string()).unwrap().get_mut("selections").unwrap().as_object_mut().unwrap();
-                    let name: String = row.get("sel_name");
-                    let price: i32 = row.get("sel_price");
-                    let selection = json!({
-                        "name": name,
-                        "price": price
-                    });
-                    selections.insert(sel_key.to_string(), selection);
+                    selections.insert(
+                        sel_key.to_string(),
+                        json!({
+                            "name": row.get::<&str, String>("sel_name"),
+                            "price": row.get::<&str, i32>("sel_price")
+                        })
+                    );
                 }
             }
         }
