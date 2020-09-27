@@ -4,17 +4,9 @@ use serde_json::{json, Map};
 use crate::{
     sql::{
         UuidNN,
-        Permission,
         clause::Clause,
     },
-    graphql::{
-        context::Context,
-        user::User,
-        order::{
-            Order,
-            query_orders,
-        },
-    },
+    graphql::context::Context,
     error::Error,
     utils::dict::Dict,
 };
@@ -23,58 +15,6 @@ pub struct QueryShop;
 
 #[juniper::graphql_object(Context = Context)]
 impl QueryShop {
-    fn my(context: &Context, id: Option<Uuid>, name: Option<String>) -> Result<Vec<Shop>, Error> {
-        let user_session_id = context.user_session_id()?;
-        let mut conn = context.state().db_connection()?;
-
-        let mut clause = Clause::new();
-        if let Some(id) = id.as_ref() {
-            clause.and(Clause::equal("id", format!("'{}'", id)));
-        }
-        if let Some(name) = name.as_ref() {
-            clause.and(Clause::like("upper(name)", format!("upper('%{}%')", name)));
-        }
-
-        let rows = query!(
-            conn,
-            format!(
-                "WITH
-                    my_user_shops AS (
-                        SELECT
-                            shop_id
-                        FROM
-                            shop_user
-                        WHERE
-                            user_id = get_session_user($1)
-                    ),
-                    my_shops AS (
-                        SELECT
-                            id, name, latest_update
-                        FROM
-                            shops INNER JOIN my_user_shops ON shops.id = my_user_shops.shop_id
-                    )
-                SELECT
-                    id, name, latest_update
-                FROM
-                    my_shops
-                {}",
-                clause,
-            ).as_str(),
-            &[&UuidNN(user_session_id)],
-        )?;
-
-        Ok(
-            rows.iter().map(|row| {
-                Shop::new(
-                    row.get("id"),
-                    row.get("name"),
-                    row.get("latest_update"),
-                )
-            })
-            .collect()
-        )
-    }
-
     fn search(context: &Context, id: Option<Uuid>, name: Option<String>) -> Result<Vec<Shop>, Error> {
         let mut clauses = String::new();
 
@@ -128,6 +68,10 @@ impl Shop {
             name: name,
             latest_update: latest_update,
         }
+    }
+
+    pub fn id(&self) -> Uuid {
+        self.id
     }
 }
 
@@ -388,70 +332,6 @@ impl Shop {
 
         Ok(serde_json::to_string(&products)?)
     }
-
-    fn shop_users(&self, context: &Context) -> Result<Option<Vec<ShopUser>>, Error> {
-        let mut conn = context.state().db_connection()?;
-        let user_session_id = context.user_session_id()?;
-        if let Some(row) = query_opt!(
-            conn,
-            "SELECT member_authority FROM shop_user
-                WHERE shop_id = $1 AND user_id = (SELECT user_id FROM get_session_user($2))",
-            &[&self.id, &UuidNN(user_session_id)],
-        )? {
-            if let Permission::None = row.get("member_authority") {
-                return Err(Error::unauthorized())
-            }
-        } else {
-            return Err(Error::unauthorized())
-        }
-
-        let rows = query!(
-            conn,
-            "SELECT users.id, users.username, users.nickname, shop_user.member_authority, shop_user.order_authority, shop_user.product_authority
-                FROM shop_user INNER JOIN users
-                ON shop_user.user_id = users.id
-                AND shop_user.shop_id = $1",
-            &[&self.id],
-        )?;
-        Ok(Some(
-            rows.iter().map(|row| {
-                ShopUser::new(
-                    User::new(
-                        row.get("id"),
-                        row.get("username"),
-                        row.get("nickname"),
-                    ),
-                    row.get("member_authority"),
-                    row.get("order_authority"),
-                    row.get("product_authority"),
-                )
-            })
-            .collect()
-        ))
-    }
-
-    fn orders(&self, context: &Context) -> Result<Vec<Order>, Error> {
-        let mut conn = context.state().db_connection()?;
-        let user_session_id = context.user_session_id()?;
-
-        let (user_id,) = query_one!(
-            conn,
-            "SELECT get_session_user($1) AS user_id;",
-            &[&UuidNN(user_session_id)],
-            (user_id: Uuid),
-        )?;
-
-        let (invalid,) = query_one!(
-            conn,
-            "SELECT check_shop_user_authority($1, $2, 'order_authority', 'none') AS invalid;",
-            &[&UuidNN(self.id), &UuidNN(user_id)],
-            (invalid: bool),
-        )?;
-
-        if invalid { return Err(Error::unauthorized()) }
-
-        query_orders(conn, Some(self.id), None)
-    }
 }
 
 struct Product {
@@ -596,42 +476,5 @@ impl Selection {
 
     fn price(&self) -> &i32 {
         &self.price
-    }
-}
-
-struct ShopUser {
-    user: User,
-    member_authority: Permission,
-    order_authority: Permission,
-    product_authority: Permission,
-}
-
-impl ShopUser {
-    fn new(user: User, member_authority: Permission, order_authority: Permission, product_authority: Permission) -> Self {
-        ShopUser {
-            user: user,
-            member_authority: member_authority,
-            order_authority: order_authority,
-            product_authority: product_authority,
-        }
-    }
-}
-
-#[juniper::graphql_object(Context = Context)]
-impl ShopUser {
-    fn user(&self) -> &User {
-        &self.user
-    }
-
-    fn member_authority(&self) -> &Permission {
-        &self.member_authority
-    }
-
-    fn order_authority(&self) -> &Permission {
-        &self.order_authority
-    }
-
-    fn product_authority(&self) -> &Permission {
-        &self.product_authority
     }
 }

@@ -33,7 +33,7 @@ impl QueryGuest {
         query_carts(conn, shop_id, Some(guest_session_id))
     }
 
-    fn orders(context: &Context, shop_id: Uuid) -> Result<Vec<Order>, Error> {
+    fn orders(context: &Context, shop_id: Uuid) -> Result<Option<Vec<Order>>, Error> {
         let guest_session_id = context.guest_session_id()?;
         let mut conn = context.state().db_connection()?;
 
@@ -46,6 +46,6 @@ impl QueryGuest {
 
         if !ok { return Err(Error::session_expired("GSSID")) }
 
-        query_orders(conn, None, Some(guest_session_id))
+        query_orders(conn, Some(shop_id), Some(guest_session_id))
     }
 }

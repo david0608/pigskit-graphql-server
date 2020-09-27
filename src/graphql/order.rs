@@ -10,7 +10,7 @@ use crate::{
     utils::dict::Dict,
 };
 
-pub fn query_orders(mut db_connection: Connection, shop_id: Option<Uuid>, guest_session_id: Option<Uuid>) -> Result<Vec<Order>, Error> {
+pub fn query_orders(mut db_connection: Connection, shop_id: Option<Uuid>, guest_session_id: Option<Uuid>) -> Result<Option<Vec<Order>>, Error> {
     let mut clause = Clause::new();
     if let Some(shop_id) = shop_id.as_ref() {
         clause.and(Clause::equal("shop_id", format!("'{}'", shop_id)));
@@ -124,7 +124,7 @@ pub fn query_orders(mut db_connection: Connection, shop_id: Option<Uuid>, guest_
         }
     }
 
-    Ok(orders.values())
+    Ok(Some(orders.values()))
 }
 
 pub fn query_carts(mut db_connection: Connection, shop_id: Option<Uuid>, guest_session_id: Option<Uuid>) -> Result<Vec<Cart>, Error> {

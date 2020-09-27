@@ -16,10 +16,10 @@ pub struct Error {
 }
 
 impl Error {
-    fn new(r#type: String, message: String) -> Self {
+    pub fn new(r#type: &str, message: &str) -> Self {
         Error {
-            r#type: r#type,
-            message: message,
+            r#type: r#type.to_string(),
+            message: message.to_string(),
             inner: None
         }
     }
@@ -34,22 +34,22 @@ impl Error {
 
     pub fn session_expired(name: &str) -> Self {
         Self::new(
-            "SessionExpired".to_string(),
-            format!(r#"Session for cookie "{}" has expired."#, name),
+            "SessionExpired",
+            &format!(r#"Session for cookie "{}" has expired."#, name),
         )
     }
 
     pub fn unauthorized() -> Self {
         Self::new(
-            "Unauthorized".to_string(),
-            "Unauthorized.".to_string(),
+            "Unauthorized",
+            "Unauthorized.",
         )
     }
 
     pub fn no_valid_cookie(name: &str) -> Self {
         Self::new(
-            "NoValidCookie".to_string(),
-            format!(r#"Missing or invalid cookie "{}" in request."#, name),
+            "NoValidCookie",
+            &format!(r#"Missing or invalid cookie "{}" in request."#, name),
         )
     }
 
