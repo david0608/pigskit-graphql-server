@@ -394,11 +394,11 @@ impl Shop {
         let user_session_id = context.user_session_id()?;
         if let Some(row) = query_opt!(
             conn,
-            "SELECT team_authority FROM shop_user
+            "SELECT member_authority FROM shop_user
                 WHERE shop_id = $1 AND user_id = (SELECT user_id FROM get_session_user($2))",
             &[&self.id, &UuidNN(user_session_id)],
         )? {
-            if let Permission::None = row.get("team_authority") {
+            if let Permission::None = row.get("member_authority") {
                 return Err(Error::unauthorized())
             }
         } else {
@@ -407,7 +407,7 @@ impl Shop {
 
         let rows = query!(
             conn,
-            "SELECT users.id, users.username, users.nickname, shop_user.team_authority, shop_user.store_authority, shop_user.product_authority
+            "SELECT users.id, users.username, users.nickname, shop_user.member_authority, shop_user.order_authority, shop_user.product_authority
                 FROM shop_user INNER JOIN users
                 ON shop_user.user_id = users.id
                 AND shop_user.shop_id = $1",
@@ -421,8 +421,8 @@ impl Shop {
                         row.get("username"),
                         row.get("nickname"),
                     ),
-                    row.get("team_authority"),
-                    row.get("store_authority"),
+                    row.get("member_authority"),
+                    row.get("order_authority"),
                     row.get("product_authority"),
                 )
             })
@@ -443,7 +443,7 @@ impl Shop {
 
         let (invalid,) = query_one!(
             conn,
-            "SELECT check_shop_user_authority($1, $2, 'store_authority', 'none') AS invalid;",
+            "SELECT check_shop_user_authority($1, $2, 'order_authority', 'none') AS invalid;",
             &[&UuidNN(self.id), &UuidNN(user_id)],
             (invalid: bool),
         )?;
@@ -601,17 +601,17 @@ impl Selection {
 
 struct ShopUser {
     user: User,
-    team_authority: Permission,
-    store_authority: Permission,
+    member_authority: Permission,
+    order_authority: Permission,
     product_authority: Permission,
 }
 
 impl ShopUser {
-    fn new(user: User, team_authority: Permission, store_authority: Permission, product_authority: Permission) -> Self {
+    fn new(user: User, member_authority: Permission, order_authority: Permission, product_authority: Permission) -> Self {
         ShopUser {
             user: user,
-            team_authority: team_authority,
-            store_authority: store_authority,
+            member_authority: member_authority,
+            order_authority: order_authority,
             product_authority: product_authority,
         }
     }
@@ -623,12 +623,12 @@ impl ShopUser {
         &self.user
     }
 
-    fn team_authority(&self) -> &Permission {
-        &self.team_authority
+    fn member_authority(&self) -> &Permission {
+        &self.member_authority
     }
 
-    fn store_authority(&self) -> &Permission {
-        &self.store_authority
+    fn order_authority(&self) -> &Permission {
+        &self.order_authority
     }
 
     fn product_authority(&self) -> &Permission {

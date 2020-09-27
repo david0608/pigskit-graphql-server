@@ -27,10 +27,10 @@ pub struct PermissionNN(pub Permission);
 #[derive(Serialize, Deserialize, Debug, ToSql, FromSql)]
 #[postgres(name = "authority")]
 pub enum Authority {
-    #[postgres(name = "team_authority")]
-    TeamAuthority,
-    #[postgres(name = "store_authority")]
-    StoreAuthority,
+    #[postgres(name = "member_authority")]
+    MemberAuthority,
+    #[postgres(name = "order_authority")]
+    OrderAuthority,
     #[postgres(name = "product_authority")]
     ProductAuthority,
 }

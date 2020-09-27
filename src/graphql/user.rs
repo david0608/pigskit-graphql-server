@@ -108,8 +108,8 @@ impl User {
                     shop.id,
                     shop.name,
                     shop.latest_update,
-                    shop_user.team_authority,
-                    shop_user.store_authority,
+                    shop_user.member_authority,
+                    shop_user.order_authority,
                     shop_user.product_authority
                 FROM
                     (SELECT * FROM shops{}) shop
@@ -130,8 +130,8 @@ impl User {
                         row.get("name"),
                         row.get("latest_update"),
                     ),
-                    row.get("team_authority"),
-                    row.get("store_authority"),
+                    row.get("member_authority"),
+                    row.get("order_authority"),
                     row.get("product_authority"),
                 )
             })
@@ -142,17 +142,17 @@ impl User {
 
 struct UserShop {
     shop: Shop,
-    team_authority: Permission,
-    store_authority: Permission,
+    member_authority: Permission,
+    order_authority: Permission,
     product_authority: Permission,
 }
 
 impl UserShop {
-    fn new(shop: Shop, team_authority: Permission, store_authority: Permission, product_authority: Permission) -> Self {
+    fn new(shop: Shop, member_authority: Permission, order_authority: Permission, product_authority: Permission) -> Self {
         UserShop {
             shop: shop,
-            team_authority: team_authority,
-            store_authority: store_authority,
+            member_authority: member_authority,
+            order_authority: order_authority,
             product_authority: product_authority,
         }
     }
@@ -164,12 +164,12 @@ impl UserShop {
         &self.shop
     }
 
-    fn team_authority(&self) -> &Permission {
-        &self.team_authority
+    fn member_authority(&self) -> &Permission {
+        &self.member_authority
     }
 
-    fn store_authority(&self) -> &Permission {
-        &self.store_authority
+    fn order_authority(&self) -> &Permission {
+        &self.order_authority
     }
 
     fn product_authority(&self) -> &Permission {
