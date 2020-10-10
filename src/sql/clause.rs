@@ -1,6 +1,7 @@
 pub enum Clause {
     Empty,
     Entries(String),
+    #[allow(dead_code)]
     Parentheses(String),
 }
 
@@ -24,6 +25,7 @@ impl Clause {
         }
     }
 
+    #[allow(dead_code)]
     pub fn parentheses(&mut self) {
         match self {
             Clause::Entries(inner) => {
@@ -44,6 +46,7 @@ impl Clause {
         }
     }
     
+    #[allow(dead_code)]
     pub fn or(&mut self, clause: Clause) {
         match self {
             Clause::Empty => {
